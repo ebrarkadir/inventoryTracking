@@ -4,6 +4,7 @@ using EnvanterBackend.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace inventoryTracking.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251020131947_InıtialCreateNewdb")]
+    partial class InıtialCreateNewdb
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -179,9 +182,6 @@ namespace inventoryTracking.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("tinyint(1)");
-
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasColumnType("longtext");
@@ -207,9 +207,8 @@ namespace inventoryTracking.Migrations
                             CanInventory = true,
                             CanLogs = true,
                             CanUsers = true,
-                            CreatedAt = new DateTime(2025, 11, 19, 8, 31, 20, 676, DateTimeKind.Utc).AddTicks(504),
-                            IsActive = true,
-                            PasswordHash = "$2a$11$Oo7o/xNsQC7ivxjiwGefWeIvPWgawfTBckS96S.AFQp98FuZpqRZS",
+                            CreatedAt = new DateTime(2025, 10, 20, 13, 19, 46, 814, DateTimeKind.Utc).AddTicks(2368),
+                            PasswordHash = "$2a$11$lXBwaDDz/mHApgH8sekbtuhH7t40WA818CZKF8cQl9sX6IAgg9e2K",
                             Role = "Admin",
                             Username = "admin"
                         });

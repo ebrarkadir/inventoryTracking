@@ -468,7 +468,7 @@ namespace EnvanterBackend.Controllers
                     break;
 
                 case "status":
-                    // Enum değerlerini string olarak döndür (örnek: "0:Depoda")
+                    
                     values = Enum.GetValues(typeof(InventoryStatus))
                         .Cast<InventoryStatus>()
                         .Select(s =>

@@ -2,6 +2,7 @@
 using EnvanterBackend.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -31,45 +32,47 @@ builder.Services.AddAuthentication("Bearer")
 
 builder.Services.AddAuthorization();
 
-// 🔹 CORS politikası — frontend’in kaynağına izin ver
+// 🔹 CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy
-            // ❗ Eğer sadece HTML dosyası (ör. file:// veya 127.0.0.1:5500) üzerinden açıyorsan:
-            .AllowAnyOrigin() // Tüm kaynaklara izin ver (development için güvenli)
-            .AllowAnyMethod()
-            .AllowAnyHeader();
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
     });
 });
 
 // 🔹 Controller ve Swagger
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new() { Title = "Envanter API", Version = "v1" });
+    c.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "Envanter API",
+        Version = "v1",
+        Description = "Ulak Envanter Takip Sistemi API dokümantasyonu"
+    });
 
-    c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Name = "Authorization",
-        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
+        Type = SecuritySchemeType.ApiKey,
         Scheme = "Bearer",
         BearerFormat = "JWT",
-        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        In = ParameterLocation.Header,
         Description = "JWT Bearer token giriniz. Örn: Bearer {token}"
     });
 
-    c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
         {
-            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            new OpenApiSecurityScheme
             {
-                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                Reference = new OpenApiReference
                 {
-                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Type = ReferenceType.SecurityScheme,
                     Id = "Bearer"
                 }
             },
@@ -88,19 +91,20 @@ builder.Logging.AddConsole();
 
 var app = builder.Build();
 
-// 🔹 Swagger (dev ortamında açık)
-if (app.Environment.IsDevelopment())
+// 🔹 Swagger her ortamda aktif
+app.UseSwagger();
+app.UseSwaggerUI(c =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Envanter API v1");
+    c.RoutePrefix = "swagger"; // URL: /swagger/index.html
+});
 
-// ⚠️ Geçici olarak HTTPS yönlendirmesini kapat
+// ⚠️ HTTPS yönlendirmesini kapat
 // app.UseHttpsRedirection();
 
-// ✅ CORS middleware, Authentication’dan önce olmalı
+// Middleware sırası
 app.UseCors("AllowFrontend");
-
+app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
 

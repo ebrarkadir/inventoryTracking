@@ -31,13 +31,28 @@ namespace EnvanterBackend.Controllers
             return canUsers == "true";
         }
 
+        // 📌 TÜM KULLANICILAR (aktif/pasif filtreli)
         [HttpGet]
-        public async Task<IActionResult> GetAll()
+        public async Task<IActionResult> GetAll(
+            [FromQuery] string? filter = null,
+            [FromQuery] bool includeInactive = false)
         {
             if (!HasUserPermission() && User.FindFirst(ClaimTypes.Role)?.Value != "Admin")
                 return Forbid();
 
-            var users = await _context.Users
+            if (string.IsNullOrEmpty(filter))
+                filter = includeInactive ? "all" : "active";
+
+            IQueryable<User> query = _context.Users.AsNoTracking();
+
+            query = filter.ToLower() switch
+            {
+                "inactive" => query.Where(u => !u.IsActive),
+                "all" => query,
+                _ => query.Where(u => u.IsActive)
+            };
+
+            var users = await query
                 .Select(u => new
                 {
                     u.Id,
@@ -46,7 +61,8 @@ namespace EnvanterBackend.Controllers
                     u.CanInventory,
                     u.CanLogs,
                     u.CanUsers,
-                    u.CreatedAt
+                    u.CreatedAt,
+                    u.IsActive
                 })
                 .ToListAsync();
 
@@ -57,7 +73,7 @@ namespace EnvanterBackend.Controllers
             await _logService.AddLogAsync(
                 userName: username,
                 action: "Kullanıcı Listesi Görüntülendi",
-                details: $"{users.Count} kullanıcı listelendi.",
+                details: $"{filter} filtresi ile {users.Count} kullanıcı listelendi.",
                 entityType: "User",
                 userId: userId == 0 ? null : userId
             );
@@ -65,6 +81,7 @@ namespace EnvanterBackend.Controllers
             return Ok(users);
         }
 
+        // 🆕 KULLANICI EKLEME
         [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] UserCreateDto dto)
         {
@@ -84,7 +101,8 @@ namespace EnvanterBackend.Controllers
                 Role = dto.Role,
                 CanInventory = dto.CanInventory,
                 CanLogs = dto.CanLogs,
-                CanUsers = dto.CanUsers
+                CanUsers = dto.CanUsers,
+                IsActive = true
             };
 
             _context.Users.Add(user);
@@ -94,7 +112,6 @@ namespace EnvanterBackend.Controllers
             var actorIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             long.TryParse(actorIdClaim, out long actorId);
 
-            // yetki metni oluştur
             var yetkiler = new List<string>();
             if (user.CanInventory) yetkiler.Add("Envanter");
             if (user.CanLogs) yetkiler.Add("Log");
@@ -113,6 +130,7 @@ namespace EnvanterBackend.Controllers
             return Ok(new { message = "Kullanıcı başarıyla oluşturuldu." });
         }
 
+        // ❌ KULLANICI PASİFLEŞTİRME (SOFT DELETE)
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteUser(long id)
         {
@@ -129,21 +147,57 @@ namespace EnvanterBackend.Controllers
             if (user == null)
                 return NotFound("Kullanıcı bulunamadı.");
 
-            _context.Users.Remove(user);
+            if (!user.IsActive)
+                return BadRequest("Kullanıcı zaten pasif.");
+
+            user.IsActive = false;
             await _context.SaveChangesAsync();
 
             await _logService.AddLogAsync(
                 userName: currentUserName,
-                action: "Kullanıcı Silindi",
-                details: $"{currentUserName}, {user.Username} adlı kullanıcıyı sildi (Rol: {user.Role}).",
+                action: "Kullanıcı Pasifleştirildi",
+                details: $"{currentUserName}, {user.Username} adlı kullanıcıyı pasif hale getirdi (Rol: {user.Role}).",
                 entityType: "User",
                 entityId: id,
                 userId: currentUserId
             );
 
-            return Ok(new { message = "Kullanıcı başarıyla silindi." });
+            return Ok(new { message = "Kullanıcı pasif hale getirildi." });
         }
 
+        // 🔄 PASİF KULLANICILARI GERİ AKTİFLEŞTİR (RESTORE)
+        [HttpPatch("{id}/restore")]
+        public async Task<IActionResult> RestoreUser(long id)
+        {
+            if (!HasUserPermission() && User.FindFirst(ClaimTypes.Role)?.Value != "Admin")
+                return Forbid();
+
+            var currentUserId = long.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var currentUserName = User.Identity?.Name ?? "Anonim";
+
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == id);
+            if (user == null)
+                return NotFound("Kullanıcı bulunamadı.");
+
+            if (user.IsActive)
+                return BadRequest("Kullanıcı zaten aktif.");
+
+            user.IsActive = true;
+            await _context.SaveChangesAsync();
+
+            await _logService.AddLogAsync(
+                userName: currentUserName,
+                action: "Kullanıcı Geri Aktifleştirildi",
+                details: $"{currentUserName}, {user.Username} kullanıcısını tekrar aktif hale getirdi.",
+                entityType: "User",
+                entityId: id,
+                userId: currentUserId
+            );
+
+            return Ok(new { message = "Kullanıcı yeniden aktif hale getirildi." });
+        }
+
+        // ✏️ KULLANICI GÜNCELLEME
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateUser(long id, [FromBody] UserUpdateDto dto)
         {
@@ -160,6 +214,7 @@ namespace EnvanterBackend.Controllers
 
             var oldRole = user.Role;
             var oldUsername = user.Username;
+            var oldIsActive = user.IsActive;
 
             user.Username = dto.Username;
 
@@ -175,6 +230,9 @@ namespace EnvanterBackend.Controllers
                 user.CanInventory = dto.CanInventory;
                 user.CanLogs = dto.CanLogs;
                 user.CanUsers = dto.CanUsers;
+
+                // Admin pasif/aktif değiştirebilir
+                user.IsActive = dto.IsActive;
             }
 
             await _context.SaveChangesAsync();
@@ -183,12 +241,13 @@ namespace EnvanterBackend.Controllers
             if (user.CanInventory) yetkiler.Add("Envanter");
             if (user.CanLogs) yetkiler.Add("Log");
             if (user.CanUsers) yetkiler.Add("Kullanıcı");
+
             var yetkiMetni = yetkiler.Any() ? string.Join(", ", yetkiler) : "Sınırlı";
 
             await _logService.AddLogAsync(
                 userName: currentUserName,
                 action: "Kullanıcı Güncellendi",
-                details: $"{currentUserName}, {oldUsername} kullanıcısını güncelledi → Yeni ad: {user.Username}, Rol: {oldRole} → {user.Role}, Yetkiler: {yetkiMetni}.",
+                details: $"{currentUserName}, {oldUsername} kullanıcısını güncelledi → Yeni ad: {user.Username}, Rol: {oldRole} → {user.Role}, Aktif: {oldIsActive} → {user.IsActive}, Yetkiler: {yetkiMetni}.",
                 entityType: "User",
                 entityId: id,
                 userId: currentUserId
